@@ -50,6 +50,7 @@ These properties control the behavior of the YCSB workload itself.
 | `insertorder` | `hashed` | Order to insert records: `ordered`, `hashed` |
 | `insertstart` | `0` | Starting key for inserts |
 | `zeropadding` | `1` | Minimum number of digits for zero-padding keys (e.g., 1 = no padding, 2 = 01, 4 = 0001) |
+| `keyprefix` | `user` | Prefix for generated keys (applied before zero padding) |
 
 ## Runtime Properties
 

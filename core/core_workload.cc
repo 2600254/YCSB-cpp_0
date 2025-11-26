@@ -77,6 +77,9 @@ const string CoreWorkload::REQUEST_DISTRIBUTION_DEFAULT = "uniform";
 const string CoreWorkload::ZERO_PADDING_PROPERTY = "zeropadding";
 const string CoreWorkload::ZERO_PADDING_DEFAULT = "1";
 
+const std::string CoreWorkload::KEY_PREFIX_PROPERTY = "keyprefix";
+const std::string CoreWorkload::KEY_PREFIX_DEFAULT = "user";
+
 const string CoreWorkload::MIN_SCAN_LENGTH_PROPERTY = "minscanlength";
 const string CoreWorkload::MIN_SCAN_LENGTH_DEFAULT = "1";
 
@@ -130,6 +133,7 @@ void CoreWorkload::Init(const utils::Properties &p) {
   int insert_start = std::stoi(p.GetProperty(INSERT_START_PROPERTY, INSERT_START_DEFAULT));
 
   zero_padding_ = std::stoi(p.GetProperty(ZERO_PADDING_PROPERTY, ZERO_PADDING_DEFAULT));
+  key_prefix_ = p.GetProperty(KEY_PREFIX_PROPERTY, KEY_PREFIX_DEFAULT);
 
   read_all_fields_ = utils::StrToBool(p.GetProperty(READ_ALL_FIELDS_PROPERTY,
                                                     READ_ALL_FIELDS_DEFAULT));
@@ -216,7 +220,7 @@ std::string CoreWorkload::BuildKeyName(uint64_t key_num) {
   if (!ordered_inserts_) {
     key_num = utils::Hash(key_num);
   }
-  std::string prekey = "user";
+  std::string prekey = key_prefix_;
   std::string value = std::to_string(key_num);
   int fill = std::max(0, zero_padding_ - static_cast<int>(value.size()));
   return prekey.append(fill, '0').append(value);

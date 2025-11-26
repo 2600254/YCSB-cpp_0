@@ -126,6 +126,12 @@ class CoreWorkload {
   static const std::string ZERO_PADDING_DEFAULT;
 
   ///
+  /// Key name prefix.
+  ///
+  static const std::string KEY_PREFIX_PROPERTY;
+  static const std::string KEY_PREFIX_DEFAULT;
+
+  ///
   /// The name of the property for the min scan length (number of records).
   ///
   static const std::string MIN_SCAN_LENGTH_PROPERTY;
@@ -226,6 +232,7 @@ class CoreWorkload {
   bool ordered_inserts_;
   size_t record_count_;
   int zero_padding_;
+  std::string key_prefix_;
 };
 
 } // ycsbc
