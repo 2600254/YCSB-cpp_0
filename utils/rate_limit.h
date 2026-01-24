@@ -10,66 +10,65 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <mutex>
-#include <ratio>
 #include <thread>
 
 namespace ycsbc {
 
 namespace utils {
 
-// Token bucket rate limiter for single client
+// Token bucket rate limiter for single client.
+// Units: rate_ = tokens/sec, bucket_ = tokens.
 class RateLimiter {
  public:
-  RateLimiter(int64_t r, int64_t b) : r_(r * TOKEN_PRECISION), b_(b * TOKEN_PRECISION), tokens_(0), last_(Clock::now()) {}
+  RateLimiter(int64_t r, int64_t b)
+      : rate_(static_cast<double>(r)),
+        bucket_(static_cast<double>(b)),
+        tokens_(0.0),
+        last_(Clock::now()) {}
 
   inline void Consume(int64_t n) {
     std::unique_lock<std::mutex> lock(mutex_);
 
-    if (r_ <= 0) {
+    if (rate_ <= 0.0) {
       return;
     }
 
-    // refill tokens
-    auto now = Clock::now();
-    auto diff = std::chrono::duration_cast<Duration>(now - last_);
-    tokens_ = std::min(b_, tokens_ + diff.count() * r_ / 1000000000);
-    last_ = now;
+    RefillLocked();
 
     // check tokens
-    tokens_ -= n * TOKEN_PRECISION;
+    tokens_ -= static_cast<double>(n);
 
     // sleep
-    if (tokens_ < 0) {
+    if (tokens_ < 0.0) {
       lock.unlock();
-      int64_t wait_time = -tokens_ * 1000000000 / r_;
-      std::this_thread::sleep_for(std::chrono::nanoseconds(wait_time));
+      const auto wait_time = Duration(-tokens_ / rate_);
+      std::this_thread::sleep_for(wait_time);
     }
   }
 
   inline void SetRate(int64_t r) {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // refill tokens
-    auto now = Clock::now();
-    auto diff = std::chrono::duration_cast<Duration>(now - last_);
-    tokens_ = std::min(b_, tokens_ + diff.count() * r_ * TOKEN_PRECISION / 1000000000);
-    last_ = now;
-
-    // set rate
-    r_ = r * TOKEN_PRECISION;
+    RefillLocked();
+    rate_ = static_cast<double>(r);
   }
 
  private:
   using Clock = std::chrono::steady_clock;
-  using Duration = std::chrono::nanoseconds;
-  static constexpr int64_t TOKEN_PRECISION = 10000;
+  using Duration = std::chrono::duration<double>;
+
+  inline void RefillLocked() {
+    auto now = Clock::now();
+    Duration diff = now - last_;
+    tokens_ = std::min(bucket_, tokens_ + diff.count() * rate_);
+    last_ = now;
+  }
 
   std::mutex mutex_;
-  int64_t r_;
-  int64_t b_;
-  int64_t tokens_;
+  double rate_;
+  double bucket_;
+  double tokens_;
   Clock::time_point last_;
 };
 
