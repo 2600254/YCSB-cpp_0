@@ -84,7 +84,7 @@ void SqliteDB::OpenDB() {
   key_ = props_->GetProperty(PROP_PRIMARY_KEY, PROP_PRIMARY_KEY_DEFAULT);
   field_prefix_ = props_->GetProperty(CoreWorkload::FIELD_NAME_PREFIX, CoreWorkload::FIELD_NAME_PREFIX_DEFAULT);
   field_count_ = std::stoi(props_->GetProperty(CoreWorkload::FIELD_COUNT_PROPERTY, CoreWorkload::FIELD_COUNT_DEFAULT));
-  table_name_ = props_->GetProperty(CoreWorkload::TABLENAME_DEFAULT, CoreWorkload::TABLENAME_DEFAULT);
+  table_name_ = props_->GetProperty(CoreWorkload::TABLENAME_PROPERTY, CoreWorkload::TABLENAME_DEFAULT);
 
   if (props_->GetProperty(PROP_CREATE_TABLE, PROP_CREATE_TABLE_DEFAULT) == "true") {
     std::vector<std::string> fields;
