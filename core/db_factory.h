@@ -10,6 +10,7 @@
 #define YCSB_C_DB_FACTORY_H_
 
 #include "db.h"
+#include "async_db_interface.h"
 #include "measurements.h"
 #include "utils/properties.h"
 
@@ -23,6 +24,10 @@ class DBFactory {
   using DBCreator = DB *(*)();
   static bool RegisterDB(std::string db_name, DBCreator db_creator);
   static DB *CreateDB(utils::Properties *props, Measurements *measurements);
+  static AsyncDBInterface *CreateAsyncDB(utils::Properties *props, 
+                                         Measurements *measurements,
+                                         ycsbc::CoreWorkload *wl,
+                                         utils::CountDownLatch *latch);
  private:
   static std::map<std::string, DBCreator> &Registry();
 };

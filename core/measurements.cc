@@ -57,7 +57,8 @@ std::string BasicMeasurements::GetStatusMsg() {
                    ? static_cast<double>(latency_sum_[op].load(std::memory_order_relaxed)) / cnt
                    : 0) / 1000.0
                << "]";
-    total_cnt += cnt;
+    if (op < INSERT_WAIT)
+      total_cnt += cnt;
   }
   return std::to_string(total_cnt) + msg_stream.str();
 }
@@ -102,7 +103,8 @@ std::string HdrHistogramMeasurements::GetStatusMsg() {
                << " 99.9=" << hdr_value_at_percentile(histogram_[op], 99.9) / 1000.0
                << " 99.99=" << hdr_value_at_percentile(histogram_[op], 99.99) / 1000.0
                << "]";
-    total_cnt += cnt;
+    if (op < INSERT_WAIT)
+      total_cnt += cnt;
   }
   return std::to_string(total_cnt) + msg_stream.str();
 }

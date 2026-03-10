@@ -35,7 +35,13 @@ const char *ycsbc::kOperationString[ycsbc::MAXOPTYPE] = {
   "UPDATE-FAILED",
   "SCAN-FAILED",
   "READMODIFYWRITE-FAILED",
-  "DELETE-FAILED"
+  "DELETE-FAILED",
+  "INSERT-WAIT",
+  "READ-WAIT",
+  "UPDATE-WAIT",
+  "SCAN-WAIT",
+  "READMODIFYWRITE-WAIT",
+  "DELETE-WAIT"
 };
 
 const string CoreWorkload::TABLENAME_PROPERTY = "table";

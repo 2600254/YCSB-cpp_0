@@ -27,12 +27,14 @@ BIND_HDRHISTOGRAM ?= 1
 # Build and statically link library, submodule required
 BUILD_HDRHISTOGRAM ?= 1
 
+USE_ASYNC_TEST ?= 0
+
 #----------------------------------------------------------
 
 ifeq ($(DEBUG_BUILD), 1)
 	CXXFLAGS += -g
 else
-	CXXFLAGS += -O2
+	CXXFLAGS += -O2 -march=native
 	CPPFLAGS += -DNDEBUG
 endif
 
@@ -79,6 +81,11 @@ else
 	LDFLAGS += -lhdr_histogram
 endif
 CPPFLAGS += -DHDRMEASUREMENT
+endif
+
+ifeq ($(USE_ASYNC_TEST), 1)
+	CPPFLAGS += -DUSE_ASYNC_TEST
+	LDFLAGS += -lfolly -lfmt -lunwind -ldl -lglog -lgflags -levent -lpthread -ldouble-conversion -lboost_context -lprofiler 
 endif
 
 all: $(EXEC)

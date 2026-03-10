@@ -105,8 +105,13 @@ class DB {
   void SetProps(utils::Properties *props) {
     props_ = props;
   }
+  bool IsAsyncDB() const {
+    return async_db_;
+  }
  protected:
   utils::Properties *props_;
+
+  bool async_db_ = false;
 };
 
 } // ycsbc

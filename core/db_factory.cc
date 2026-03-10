@@ -9,6 +9,8 @@
 #include "db_factory.h"
 #include "basic_db.h"
 #include "db_wrapper.h"
+#include "db_sync_async_adapter.h"
+#include "db_native_async_adapter.h"
 
 namespace ycsbc {
 
@@ -34,5 +36,26 @@ DB *DBFactory::CreateDB(utils::Properties *props, Measurements *measurements) {
   }
   return db;
 }
+#ifdef USE_ASYNC_TEST
+AsyncDBInterface *DBFactory::CreateAsyncDB(utils::Properties *props, 
+                                           Measurements *measurements,
+                                           ycsbc::CoreWorkload *wl,
+                                           utils::CountDownLatch *latch) {
+  std::string db_name = props->GetProperty("dbname", "basic");
+  AsyncDBInterface *db = nullptr;
+  std::map<std::string, DBCreator> &registry = Registry();
+  if (registry.find(db_name) != registry.end()) {
+    DB *new_db = (*registry[db_name])();
+    new_db->SetProps(props);
+    if (new_db->IsAsyncDB()){
+      db = new DBNativeASyncAdapter(new_db, measurements, props, wl, latch);
+    } else {
+      db = new DBSyncAsyncAdapter(new_db, measurements, props, wl, latch);
+    }
+  }
+  return db;
+}
+
+#endif // USE_ASYNC_TEST
 
 } // ycsbc

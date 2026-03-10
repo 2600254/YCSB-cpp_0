@@ -17,6 +17,7 @@
 #include <chrono>
 #include <iomanip>
 
+#include "async_task_publisher.h"
 #include "client.h"
 #include "core_workload.h"
 #include "db_factory.h"
@@ -90,6 +91,7 @@ int main(const int argc, const char *argv[]) {
 
   const bool do_load = (props.GetProperty("doload", "false") == "true");
   const bool do_transaction = (props.GetProperty("dotransaction", "false") == "true");
+  const bool async_test = (props.GetProperty("asynctest", "false") == "true");
   if (!do_load && !do_transaction) {
     std::cerr << "No operation to do" << std::endl;
     exit(1);
@@ -103,25 +105,44 @@ int main(const int argc, const char *argv[]) {
     exit(1);
   }
 
+  ycsbc::CoreWorkload wl;
+  wl.Init(props);
+
+#ifdef USE_ASYNC_TEST
+  // async related variables
+  ycsbc::AsyncDBInterface *async_db = nullptr; 
+  ycsbc::utils::CountDownLatch async_latch(num_threads);
+#endif
+
   std::vector<ycsbc::DB *> dbs;
-  for (int i = 0; i < num_threads; i++) {
-    ycsbc::DB *db = ycsbc::DBFactory::CreateDB(&props, measurements);
-    if (db == nullptr) {
+  if (!async_test) {
+    for (int i = 0; i < num_threads; i++) {
+      ycsbc::DB *db = ycsbc::DBFactory::CreateDB(&props, measurements);
+      if (db == nullptr) {
+        std::cerr << "Unknown database name " << props["dbname"] << std::endl;
+        exit(1);
+      }
+      dbs.push_back(db);
+    }
+  } else {
+#ifdef USE_ASYNC_TEST
+    async_db = ycsbc::DBFactory::CreateAsyncDB(&props, measurements, &wl, &async_latch);
+    if (async_db == nullptr) {
       std::cerr << "Unknown database name " << props["dbname"] << std::endl;
       exit(1);
     }
-    dbs.push_back(db);
+#else
+    std::cerr << "Async test is not supported without ASYNC_TEST defined" << std::endl;
+    exit(1);
+#endif
   }
 
-  ycsbc::CoreWorkload wl;
-  wl.Init(props);
 
   // print status periodically
   const bool show_status = (props.GetProperty("status", "false") == "true");
   const int status_interval = std::stoi(props.GetProperty("status.interval", "10"));
-
   // load phase
-  if (do_load) {
+  if (do_load && !async_test) {
     const int total_ops = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
 
     ycsbc::utils::CountDownLatch latch(num_threads);
@@ -159,6 +180,47 @@ int main(const int argc, const char *argv[]) {
     std::cout << "Load runtime(sec): " << runtime << std::endl;
     std::cout << "Load operations(ops): " << sum << std::endl;
     std::cout << "Load throughput(ops/sec): " << sum / runtime << std::endl;
+  } else if (do_load) {
+#ifdef USE_ASYNC_TEST
+    // initial ops per second, unlimited if <= 0
+    const int64_t ops_limit = std::stoi(props.GetProperty("limit.ops", "0"));
+    // rate file path for dynamic rate limiting, format "time_stamp_sec new_ops_per_second" per line
+    std::string rate_file = props.GetProperty("limit.file", "");
+
+    const int total_ops = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
+
+    ycsbc::utils::Timer<double> timer;
+
+    timer.Start();
+    std::future<void> status_future;
+    if (show_status) {
+      status_future = std::async(std::launch::async, StatusThread,
+                                 measurements, &async_latch, status_interval);
+    }
+
+    std::vector<ycsbc::utils::RateLimiter *> rate_limiters(1);
+    if (ops_limit > 0 || rate_file != "") {
+      rate_limiters[0] = new ycsbc::utils::RateLimiter(ops_limit, ops_limit);
+    }
+    
+    std::future<void> rlim_future;
+    if (rate_file != "") {
+      rlim_future = std::async(std::launch::async, RateLimitThread, rate_file, rate_limiters, &async_latch);
+    }
+    
+    int sum = std::async(std::launch::async, ycsbc::AsyncTaskPublisher, async_db, 
+                         total_ops, num_threads, true, true, !do_transaction, &async_latch, rate_limiters[0]).get();
+
+    async_latch.Await();
+    double runtime = timer.End();
+
+    if (show_status) {
+      status_future.wait();
+    }
+    std::cout << "Load runtime(sec): " << runtime << std::endl;
+    std::cout << "Load operations(ops): " << sum << std::endl;
+    std::cout << "Load throughput(ops/sec): " << sum / runtime << std::endl;
+#endif
   }
 
   measurements->Reset();
@@ -166,7 +228,7 @@ int main(const int argc, const char *argv[]) {
 
 
   // transaction phase
-  if (do_transaction) {
+  if (do_transaction && !async_test) {
     // initial ops per second, unlimited if <= 0
     const int64_t ops_limit = std::stoi(props.GetProperty("limit.ops", "0"));
     // rate file path for dynamic rate limiting, format "time_stamp_sec new_ops_per_second" per line
@@ -221,10 +283,59 @@ int main(const int argc, const char *argv[]) {
     std::cout << "Run runtime(sec): " << runtime << std::endl;
     std::cout << "Run operations(ops): " << sum << std::endl;
     std::cout << "Run throughput(ops/sec): " << sum / runtime << std::endl;
+  } else if (do_transaction) {
+#ifdef USE_ASYNC_TEST
+    // initial ops per second, unlimited if <= 0
+    const int64_t ops_limit = std::stoi(props.GetProperty("limit.ops", "0"));
+    // rate file path for dynamic rate limiting, format "time_stamp_sec new_ops_per_second" per line
+    std::string rate_file = props.GetProperty("limit.file", "");
+
+    const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
+
+    if (do_load) {
+      async_latch.~CountDownLatch();
+      new (&async_latch) ycsbc::utils::CountDownLatch(num_threads);
+    } 
+    ycsbc::utils::Timer<double> timer;
+
+    timer.Start();
+    std::future<void> status_future;
+    if (show_status) {
+      status_future = std::async(std::launch::async, StatusThread,
+                                 measurements, &async_latch, status_interval);
+    }
+
+    std::vector<ycsbc::utils::RateLimiter *> rate_limiters(1);
+    if (ops_limit > 0 || rate_file != "") {
+      rate_limiters[0] = new ycsbc::utils::RateLimiter(ops_limit, ops_limit);
+    }
+    
+    std::future<void> rlim_future;
+    if (rate_file != "") {
+      rlim_future = std::async(std::launch::async, RateLimitThread, rate_file, rate_limiters, &async_latch);
+    }
+    
+    int sum = std::async(std::launch::async, ycsbc::AsyncTaskPublisher, async_db, 
+                         total_ops, num_threads, false, !do_load, true, &async_latch, rate_limiters[0]).get();
+    async_latch.Await();
+    double runtime = timer.End();
+
+    if (show_status) {
+      status_future.wait();
+    }
+
+    std::cout << "Run runtime(sec): " << runtime << std::endl;
+    std::cout << "Run operations(ops): " << sum << std::endl;
+    std::cout << "Run throughput(ops/sec): " << sum / runtime << std::endl;
+#endif
   }
 
-  for (int i = 0; i < num_threads; i++) {
-    delete dbs[i];
+  if (!async_test) {
+    for (int i = 0; i < num_threads; i++) {
+      delete dbs[i];
+    }
+  } else {
+    delete async_db;
   }
 }
 
@@ -292,6 +403,9 @@ void ParseCommandLine(int argc, const char *argv[], ycsbc::utils::Properties &pr
     } else if (strcmp(argv[argindex], "-s") == 0) {
       props.SetProperty("status", "true");
       argindex++;
+    } else if (strcmp(argv[argindex], "-asynctest") == 0) {
+      props.SetProperty("asynctest", "true");
+      argindex++;
     } else {
       UsageMessage(argv[0]);
       std::cerr << "Unknown option '" << argv[argindex] << "'" << std::endl;
@@ -319,7 +433,8 @@ void UsageMessage(const char *command) {
       "  -p name=value: specify a property to be passed to the DB and workloads\n"
       "                 multiple properties can be specified, and override any\n"
       "                 values in the propertyfile\n"
-      "  -s: print status every 10 seconds (use status.interval prop to override)"
+      "  -s: print status every 10 seconds (use status.interval prop to override)\n"
+      "  -asynctest: run all phase in async mode"
       << std::endl;
 }
 
