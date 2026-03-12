@@ -30,9 +30,30 @@ class DBNativeASyncAdapter : public AsyncDBInterface{
   }
 
   void AddTask(const task& t) override {
+    std::function<void()> func;
+    auto time = t.wait_timer;
+    switch (t.type) {
+      case task::LOAD:
+        func = [this, time]() {
+          wait_timer_ = time;
+          wl_->DoInsert(*this);
+        };
+        break;
+      case task::TRANSACTION:
+        func = [this, time]() {
+          wait_timer_ = time;
+          wl_->DoTransaction(*this);
+        };
+        break;
+      case task::END:
+      case task::QUIT:
+        func = [this]() {
+          latch_->CountDown();
+        };
+        break;
+    }
+    db_->AddTask(func);
   }
-
- private:
 };
 
 } // ycsbc

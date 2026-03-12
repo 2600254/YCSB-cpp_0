@@ -16,6 +16,7 @@ BIND_LEVELDB ?= 0
 BIND_ROCKSDB ?= 0
 BIND_LMDB ?= 0
 BIND_SQLITE ?= 0
+BIND_ELASTIC ?= 0
 
 # Extra options
 DEBUG_BUILD ?=
@@ -61,6 +62,18 @@ endif
 ifeq ($(BIND_SQLITE), 1)
 	LDFLAGS += -lsqlite3
 	SOURCES += $(wildcard sqlite/*.cc)
+endif
+
+ifeq ($(BIND_ELASTIC), 1)
+	ifeq ($(ELASTIC_DIR),)
+        $(error Please set the environment variable ELASTIC_DIR to the rootpath of Elastic-lsm)
+	endif
+	ifeq (${USE_ASYNC_TEST}, )
+		$(error Elastic-lsm must run in async mode, please set USE_ASYNC_TEST to 1)
+	endif
+	LDFLAGS += -L$(ELASTIC_DIR) -lrocksdb -Wl,-rpath,$(ELASTIC_DIR)
+	CXXFLAGS += -I$(ELASTIC_DIR)/include
+	SOURCES += $(wildcard elastic/*.cc)
 endif
 
 CXXFLAGS += -std=c++17 -Wall -pthread $(EXTRA_CXXFLAGS) -I./

@@ -335,7 +335,9 @@ int main(const int argc, const char *argv[]) {
       delete dbs[i];
     }
   } else {
+#ifdef USE_ASYNC_TEST
     delete async_db;
+#endif
   }
 }
 

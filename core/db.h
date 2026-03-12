@@ -11,6 +11,7 @@
 
 #include "utils/properties.h"
 
+#include <functional>
 #include <vector>
 #include <string>
 
@@ -105,13 +106,16 @@ class DB {
   void SetProps(utils::Properties *props) {
     props_ = props;
   }
-  bool IsAsyncDB() const {
-    return async_db_;
+  virtual bool IsAsyncDB() const {
+    return false;
   }
+
+  virtual Status AddTask(std::function<void()> task) {
+    return kNotImplemented;
+  }
+
  protected:
   utils::Properties *props_;
-
-  bool async_db_ = false;
 };
 
 } // ycsbc
