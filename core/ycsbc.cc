@@ -85,6 +85,77 @@ void RateLimitThread(std::string rate_file, std::vector<ycsbc::utils::RateLimite
   }
 }
 
+void UpdateWorkloadThread(std::string workload_file, ycsbc::CoreWorkload *cw, 
+                          ycsbc::utils::CountDownLatch *latch)
+{
+  std::ifstream ifs;
+  ifs.open(workload_file);
+
+  if (!ifs.is_open())
+  {
+    ycsbc::utils::Exception("failed to open: " + workload_file);
+  }
+
+  int64_t last_time = 0;
+  while (!ifs.eof()) {
+    int64_t next_time;
+    double next_read_rate;
+    double next_update_rate;
+    double next_insert_rate;
+    double next_scan_rate;
+    double next_readmodifywrite_rate;
+    ifs >> next_time  >> next_read_rate >> next_update_rate
+        >> next_insert_rate >> next_scan_rate >> next_readmodifywrite_rate; 
+
+    if (next_time <= last_time) {
+      ycsbc::utils::Exception("invalid workload file");
+    }
+
+    bool done = latch->AwaitFor(next_time - last_time);
+    if (done) {
+      break;
+    }
+    last_time = next_time;
+
+    cw->UpdateOperationProportions(next_read_rate, 
+                                   next_update_rate, 
+                                   next_insert_rate, 
+                                   next_scan_rate, 
+                                   next_readmodifywrite_rate);
+  }
+}
+void UpdateKeySkewThread(std::string skew_file, ycsbc::CoreWorkload *cw, 
+                         ycsbc::utils::CountDownLatch *latch)
+{
+  std::ifstream ifs;
+  ifs.open(skew_file);
+
+  if (!ifs.is_open())
+  {
+    ycsbc::utils::Exception("failed to open: " + skew_file);
+  }
+
+  int64_t last_time = 0;
+  while (!ifs.eof()) {
+    int64_t next_time;
+    double next_read_hotspot_pos;
+    double next_write_hotspot_pos;
+    ifs >> next_time  >> next_read_hotspot_pos >> next_write_hotspot_pos; 
+
+    if (next_time <= last_time) {
+      ycsbc::utils::Exception("invalid skew file");
+    }
+
+    bool done = latch->AwaitFor(next_time - last_time);
+    if (done) {
+      break;
+    }
+    last_time = next_time;
+
+    cw->UpdateKeyChooser(next_read_hotspot_pos, next_write_hotspot_pos);
+  }
+}
+
 int main(const int argc, const char *argv[]) {
   ycsbc::utils::Properties props;
   ParseCommandLine(argc, argv, props);
@@ -207,7 +278,7 @@ int main(const int argc, const char *argv[]) {
     if (rate_file != "") {
       rlim_future = std::async(std::launch::async, RateLimitThread, rate_file, rate_limiters, &async_latch);
     }
-    
+
     int sum = std::async(std::launch::async, ycsbc::AsyncTaskPublisher, async_db, 
                          total_ops, num_threads, true, true, !do_transaction, &async_latch, rate_limiters[0]).get();
 
@@ -233,6 +304,8 @@ int main(const int argc, const char *argv[]) {
     const int64_t ops_limit = std::stoi(props.GetProperty("limit.ops", "0"));
     // rate file path for dynamic rate limiting, format "time_stamp_sec new_ops_per_second" per line
     std::string rate_file = props.GetProperty("limit.file", "");
+    std::string workload_file = props.GetProperty("workload.file", "");
+    std::string skew_file = props.GetProperty("skew.file", "");
 
     const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
 
@@ -267,6 +340,18 @@ int main(const int argc, const char *argv[]) {
       rlim_future = std::async(std::launch::async, RateLimitThread, rate_file, rate_limiters, &latch);
     }
 
+    std::future<void> workload_future;
+    if (workload_file != "")
+    {
+      workload_future = std::async(std::launch::async, UpdateWorkloadThread, workload_file, &wl, &async_latch);
+    }
+
+    std::future<void> skew_future;
+    if (skew_file != "")
+    {
+      skew_future = std::async(std::launch::async, UpdateKeySkewThread, skew_file, &wl, &async_latch);
+    }
+
     assert((int)client_threads.size() == num_threads);
 
     int sum = 0;
@@ -289,6 +374,8 @@ int main(const int argc, const char *argv[]) {
     const int64_t ops_limit = std::stoi(props.GetProperty("limit.ops", "0"));
     // rate file path for dynamic rate limiting, format "time_stamp_sec new_ops_per_second" per line
     std::string rate_file = props.GetProperty("limit.file", "");
+    std::string workload_file = props.GetProperty("workload.file", "");
+    std::string skew_file = props.GetProperty("skew.file", "");
 
     const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
 
@@ -315,6 +402,18 @@ int main(const int argc, const char *argv[]) {
       rlim_future = std::async(std::launch::async, RateLimitThread, rate_file, rate_limiters, &async_latch);
     }
     
+    std::future<void> workload_future;
+    if (workload_file != "")
+    {
+      workload_future = std::async(std::launch::async, UpdateWorkloadThread, workload_file, &wl, &async_latch);
+    }
+
+    std::future<void> skew_future;
+    if (skew_file != "")
+    {
+      skew_future = std::async(std::launch::async, UpdateKeySkewThread, skew_file, &wl, &async_latch);
+    }
+
     int sum = std::async(std::launch::async, ycsbc::AsyncTaskPublisher, async_db, 
                          total_ops, num_threads, false, !do_load, true, &async_latch, rate_limiters[0]).get();
     async_latch.Await();

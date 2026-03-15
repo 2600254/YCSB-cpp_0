@@ -17,6 +17,7 @@
 #include "discrete_generator.h"
 #include "counter_generator.h"
 #include "acknowledged_counter_generator.h"
+#include "multi_zipfian_generator.h"
 #include "utils/properties.h"
 #include "utils/utils.h"
 
@@ -208,13 +209,18 @@ class CoreWorkload {
     delete transaction_insert_key_sequence_;
   }
 
+  void UpdateOperationProportions(double read_proportion = 0, double update_proportion = 0,
+                                  double insert_proportion = 0, double scan_proportion = 0,
+                                  double readmodifywrite_proportion = 0);
+  void UpdateKeyChooser(double read_hotspot_pos = 0, double write_hotspot_pos = 0);
+
  protected:
   static Generator<uint64_t> *GetFieldLenGenerator(const utils::Properties &p);
   std::string BuildKeyName(uint64_t key_num);
   void BuildValues(std::vector<DB::Field> &values);
   void BuildSingleValue(std::vector<DB::Field> &update);
 
-  uint64_t NextTransactionKeyNum();
+  uint64_t NextTransactionKeyNum(OperationType type);
   std::string NextFieldName();
 
   DB::Status TransactionRead(DB &db);
@@ -229,8 +235,10 @@ class CoreWorkload {
   bool read_all_fields_;
   bool write_all_fields_;
   Generator<uint64_t> *field_len_generator_;
-  DiscreteGenerator<Operation> op_chooser_;
+  DiscreteGenerator<Operation> *op_chooser_;
   Generator<uint64_t> *key_chooser_; // transaction key gen
+  bool use_multizip_key_chooser_;
+  MultiZipfianGenerator *multi_zipfian_key_chooser_;
   Generator<uint64_t> *field_chooser_;
   Generator<uint64_t> *scan_len_chooser_;
   CounterGenerator *insert_key_sequence_; // load insert key gen

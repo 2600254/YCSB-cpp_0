@@ -152,21 +152,21 @@ void CoreWorkload::Init(const utils::Properties &p) {
     ordered_inserts_ = true;
   }
 
-
+  op_chooser_ = new DiscreteGenerator<Operation>();
   if (read_proportion > 0) {
-    op_chooser_.AddValue(READ, read_proportion);
+    op_chooser_->AddValue(READ, read_proportion);
   }
   if (update_proportion > 0) {
-    op_chooser_.AddValue(UPDATE, update_proportion);
+    op_chooser_->AddValue(UPDATE, update_proportion);
   }
   if (insert_proportion > 0) {
-    op_chooser_.AddValue(INSERT, insert_proportion);
+    op_chooser_->AddValue(INSERT, insert_proportion);
   }
   if (scan_proportion > 0) {
-    op_chooser_.AddValue(SCAN, scan_proportion);
+    op_chooser_->AddValue(SCAN, scan_proportion);
   }
   if (readmodifywrite_proportion > 0) {
-    op_chooser_.AddValue(READMODIFYWRITE, readmodifywrite_proportion);
+    op_chooser_->AddValue(READMODIFYWRITE, readmodifywrite_proportion);
   }
 
   insert_key_sequence_ = new CounterGenerator(insert_start);
@@ -191,9 +191,20 @@ void CoreWorkload::Init(const utils::Properties &p) {
     }
   } else if (request_dist == "latest") {
     key_chooser_ = new SkewedLatestGenerator(*transaction_insert_key_sequence_);
+  } else if (request_dist == "multizip") {
+    int op_count = std::stoi(p.GetProperty(OPERATION_COUNT_PROPERTY));
+    int new_keys = (int)(op_count * insert_proportion * 2); // a fudge factor
+    if (p.ContainsKey(ZIPFIAN_CONST_PROPERTY)) {
+      double zipfian_const = std::stod(p.GetProperty(ZIPFIAN_CONST_PROPERTY));
+      multi_zipfian_key_chooser_ = new MultiZipfianGenerator(0, record_count_ + new_keys - 1, zipfian_const);
+    } else {
+      multi_zipfian_key_chooser_ = new MultiZipfianGenerator(record_count_ + new_keys);
+    }
   } else {
     throw utils::Exception("Unknown request distribution: " + request_dist);
   }
+
+  use_multizip_key_chooser_ = request_dist == "multizip";
 
   field_chooser_ = new UniformGenerator(0, field_count_ - 1);
 
@@ -254,10 +265,14 @@ void CoreWorkload::BuildSingleValue(std::vector<ycsbc::DB::Field> &values) {
   std::generate_n(std::back_inserter(field.value), len, [&]() { return byte_generator.Next(); } );
 }
 
-uint64_t CoreWorkload::NextTransactionKeyNum() {
+uint64_t CoreWorkload::NextTransactionKeyNum(OperationType op) {
   uint64_t key_num;
   do {
-    key_num = key_chooser_->Next();
+    if (!use_multizip_key_chooser_) {
+        key_num = key_chooser_->Next();
+    } else {
+        key_num = multi_zipfian_key_chooser_->Next(op);
+    }
   } while (key_num > transaction_insert_key_sequence_->Last());
   return key_num;
 }
@@ -275,7 +290,7 @@ bool CoreWorkload::DoInsert(DB &db) {
 
 bool CoreWorkload::DoTransaction(DB &db) {
   DB::Status status;
-  switch (op_chooser_.Next()) {
+  switch (op_chooser_->Next()) {
     case READ:
       status = TransactionRead(db);
       break;
@@ -298,7 +313,7 @@ bool CoreWorkload::DoTransaction(DB &db) {
 }
 
 DB::Status CoreWorkload::TransactionRead(DB &db) {
-  uint64_t key_num = NextTransactionKeyNum();
+  uint64_t key_num = NextTransactionKeyNum(OperationType::kRead);
   const std::string key = BuildKeyName(key_num);
   std::vector<DB::Field> result;
   if (!read_all_fields()) {
@@ -311,7 +326,7 @@ DB::Status CoreWorkload::TransactionRead(DB &db) {
 }
 
 DB::Status CoreWorkload::TransactionReadModifyWrite(DB &db) {
-  uint64_t key_num = NextTransactionKeyNum();
+  uint64_t key_num = NextTransactionKeyNum(OperationType::kWrite);
   const std::string key = BuildKeyName(key_num);
   std::vector<DB::Field> result;
 
@@ -333,7 +348,7 @@ DB::Status CoreWorkload::TransactionReadModifyWrite(DB &db) {
 }
 
 DB::Status CoreWorkload::TransactionScan(DB &db) {
-  uint64_t key_num = NextTransactionKeyNum();
+  uint64_t key_num = NextTransactionKeyNum(OperationType::kRead);
   const std::string key = BuildKeyName(key_num);
   int len = scan_len_chooser_->Next();
   std::vector<std::vector<DB::Field>> result;
@@ -347,7 +362,7 @@ DB::Status CoreWorkload::TransactionScan(DB &db) {
 }
 
 DB::Status CoreWorkload::TransactionUpdate(DB &db) {
-  uint64_t key_num = NextTransactionKeyNum();
+  uint64_t key_num = NextTransactionKeyNum(OperationType::kWrite);
   const std::string key = BuildKeyName(key_num);
   std::vector<DB::Field> values;
   if (write_all_fields()) {
@@ -366,6 +381,37 @@ DB::Status CoreWorkload::TransactionInsert(DB &db) {
   DB::Status s = db.Insert(table_name_, key, values);
   transaction_insert_key_sequence_->Acknowledge(key_num);
   return s;
+}
+
+void CoreWorkload::UpdateOperationProportions(double read_proportion, double update_proportion,
+                                              double insert_proportion, double scan_proportion,
+                                              double readmodifywrite_proportion)
+{
+  DiscreteGenerator<Operation>* new_chooser = new DiscreteGenerator<Operation>();
+  if (read_proportion > 0) {
+    op_chooser_->AddValue(READ, read_proportion);
+  }
+  if (update_proportion > 0) {
+    op_chooser_->AddValue(UPDATE, update_proportion);
+  }
+  if (insert_proportion > 0) {
+    op_chooser_->AddValue(INSERT, insert_proportion);
+  }
+  if (scan_proportion > 0) {
+    op_chooser_->AddValue(SCAN, scan_proportion);
+  }
+  if (readmodifywrite_proportion > 0) {
+    op_chooser_->AddValue(READMODIFYWRITE, readmodifywrite_proportion);
+  }
+  std::swap(op_chooser_, new_chooser);
+  delete new_chooser;
+}
+void CoreWorkload::UpdateKeyChooser(double read_hotspot_pos, double write_hotspot_pos)
+{
+  if (!use_multizip_key_chooser_) {
+    return;
+  }
+  multi_zipfian_key_chooser_->UpdateHotspotPosition(read_hotspot_pos, write_hotspot_pos);
 }
 
 } // ycsbc

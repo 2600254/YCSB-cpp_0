@@ -65,6 +65,7 @@ These properties control the runtime behavior of YCSB-cpp.
 | `sleepafterload` | `0` | Sleep time in seconds after load phase |
 | `doload` | `false` | Whether to run the load phase. (`-load` flag) |
 | `dotransaction` | `false` | Whether to run the transaction phase. (`-run` flag) |
+| `asynctest` | `false` | Enable async test mode (operations won't wait for completion) |
 
 ### Rate Limiting Properties
 
