@@ -174,6 +174,7 @@ void ElasticDB::Init() {
   if (!s.ok()) {
     throw utils::Exception(std::string("ElasticLSM Open: ") + s.ToString());
   }
+  wopt_.disableWAL = true;
 }
 
 void ElasticDB::Cleanup() { 
@@ -230,30 +231,30 @@ DB::Status ElasticDB::Scan(const std::string &table, const std::string &key, int
 
 DB::Status ElasticDB::Update(const std::string &table, const std::string &key, std::vector<Field> &values) {
   std::string data;
-  rocksdb::Status s = elastic_db_->Get(rocksdb::ReadOptions(), key, &data);
-  if (s.IsNotFound()) {
-    return kNotFound;
-  } else if (!s.ok()) {
-    throw utils::Exception(std::string("Elastic Get: ") + s.ToString());
-  }
-  std::vector<Field> current_values;
-  DeserializeRow(current_values, data);
-  assert(current_values.size() == static_cast<size_t>(fieldcount_));
-  for (Field &new_field : values) {
-    bool found MAYBE_UNUSED = false;
-    for (Field &cur_field : current_values) {
-      if (cur_field.name == new_field.name) {
-        found = true;
-        cur_field.value = new_field.value;
-        break;
-      }
-    }
-    assert(found);
-  }
+  // rocksdb::Status s = elastic_db_->Get(rocksdb::ReadOptions(), key, &data);
+  // if (s.IsNotFound()) {
+  //   return kNotFound;
+  // } else if (!s.ok()) {
+  //   throw utils::Exception(std::string("Elastic Get: ") + s.ToString());
+  // }
+  // std::vector<Field> current_values;
+  // DeserializeRow(current_values, data);
+  // assert(current_values.size() == static_cast<size_t>(fieldcount_));
+  // for (Field &new_field : values) {
+  //   bool found MAYBE_UNUSED = false;
+  //   for (Field &cur_field : current_values) {
+  //     if (cur_field.name == new_field.name) {
+  //       found = true;
+  //       cur_field.value = new_field.value;
+  //       break;
+  //     }
+  //   }
+  //   assert(found);
+  // }
 
-  data.clear();
-  SerializeRow(current_values, data);
-  s = elastic_db_->Put(wopt_, key, data);
+  // data.clear();
+  SerializeRow(values, data);
+  rocksdb::Status s = elastic_db_->Put(wopt_, key, data);
   if (!s.ok()) {
     throw utils::Exception(std::string("Elastic Put: ") + s.ToString());
   }

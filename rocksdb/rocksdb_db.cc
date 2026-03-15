@@ -18,6 +18,7 @@
 #include <rocksdb/status.h>
 #include <rocksdb/utilities/options_util.h>
 #include <rocksdb/write_batch.h>
+#include <rocksdb/statistics.h>
 
 namespace {
   const std::string PROP_NAME = "rocksdb.dbname";
@@ -122,6 +123,7 @@ int RocksdbDB::ref_cnt_ = 0;
 std::mutex RocksdbDB::mu_;
 rocksdb::WriteOptions RocksdbDB::wopt_;
 
+rocksdb::Options opt;
 void RocksdbDB::Init() {
 // merge operator disabled by default due to link error
 #ifdef USE_MERGEUPDATE
@@ -197,7 +199,7 @@ void RocksdbDB::Init() {
     throw utils::Exception("RocksDB db path is missing");
   }
 
-  rocksdb::Options opt;
+  // rocksdb::Options opt;
   opt.create_if_missing = true;
   std::vector<rocksdb::ColumnFamilyDescriptor> cf_descs;
   GetOptions(props, &opt, &cf_descs);
@@ -212,6 +214,7 @@ void RocksdbDB::Init() {
       throw utils::Exception(std::string("RocksDB DestroyDB: ") + s.ToString());
     }
   }
+  opt.statistics = rocksdb::CreateDBStatistics();
   if (cf_descs.empty()) {
     s = rocksdb::DB::Open(opt, db_path, &db_);
   } else {
@@ -220,6 +223,7 @@ void RocksdbDB::Init() {
   if (!s.ok()) {
     throw utils::Exception(std::string("RocksDB Open: ") + s.ToString());
   }
+  wopt_.disableWAL = true;
 }
 
 void RocksdbDB::Cleanup() { 
@@ -227,6 +231,7 @@ void RocksdbDB::Cleanup() {
   if (--ref_cnt_) {
     return;
   }
+  std::printf("%s\n", opt.statistics->ToString().c_str());
   for (size_t i = 0; i < cf_handles_.size(); i++) {
     if (cf_handles_[i] != nullptr) {
       db_->DestroyColumnFamilyHandle(cf_handles_[i]);
@@ -257,6 +262,10 @@ void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt
     config_options.input_strings_escaped = true;
     config_options.env = env;
     rocksdb::Status s = rocksdb::LoadOptionsFromFile(config_options, options_file, opt, cf_descs);
+    int val = std::stoi(props.GetProperty(PROP_MAX_BG_JOBS, PROP_MAX_BG_JOBS_DEFAULT));
+    if (val != 0) {
+      opt->max_background_jobs = val;
+    }
     if (!s.ok()) {
       throw utils::Exception(std::string("RocksDB LoadOptionsFromFile: ") + s.ToString());
     }
@@ -477,30 +486,30 @@ DB::Status RocksdbDB::ScanSingle(const std::string &table, const std::string &ke
 DB::Status RocksdbDB::UpdateSingle(const std::string &table, const std::string &key,
                                    std::vector<Field> &values) {
   std::string data;
-  rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &data);
-  if (s.IsNotFound()) {
-    return kNotFound;
-  } else if (!s.ok()) {
-    throw utils::Exception(std::string("RocksDB Get: ") + s.ToString());
-  }
-  std::vector<Field> current_values;
-  DeserializeRow(current_values, data);
-  assert(current_values.size() == static_cast<size_t>(fieldcount_));
-  for (Field &new_field : values) {
-    bool found MAYBE_UNUSED = false;
-    for (Field &cur_field : current_values) {
-      if (cur_field.name == new_field.name) {
-        found = true;
-        cur_field.value = new_field.value;
-        break;
-      }
-    }
-    assert(found);
-  }
+  // rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &data);
+  // if (s.IsNotFound()) {
+  //   return kNotFound;
+  // } else if (!s.ok()) {
+  //   throw utils::Exception(std::string("RocksDB Get: ") + s.ToString());
+  // }
+  // std::vector<Field> current_values;
+  // DeserializeRow(current_values, data);
+  // assert(current_values.size() == static_cast<size_t>(fieldcount_));
+  // for (Field &new_field : values) {
+  //   bool found MAYBE_UNUSED = false;
+  //   for (Field &cur_field : current_values) {
+  //     if (cur_field.name == new_field.name) {
+  //       found = true;
+  //       cur_field.value = new_field.value;
+  //       break;
+  //     }
+  //   }
+  //   assert(found);
+  // }
 
-  data.clear();
-  SerializeRow(current_values, data);
-  s = db_->Put(wopt_, key, data);
+  // data.clear();
+  SerializeRow(values, data);
+  rocksdb::Status s = db_->Put(wopt_, key, data);
   if (!s.ok()) {
     throw utils::Exception(std::string("RocksDB Put: ") + s.ToString());
   }
