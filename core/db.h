@@ -16,7 +16,6 @@
 #include <string>
 
 namespace ycsbc {
-
 ///
 /// Database interface layer.
 /// per-thread DB instance.

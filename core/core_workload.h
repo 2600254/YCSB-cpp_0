@@ -207,7 +207,6 @@ class CoreWorkload {
     delete insert_key_sequence_;
     delete transaction_insert_key_sequence_;
   }
-
  protected:
   static Generator<uint64_t> *GetFieldLenGenerator(const utils::Properties &p);
   std::string BuildKeyName(uint64_t key_num);
@@ -239,6 +238,7 @@ class CoreWorkload {
   size_t record_count_;
   int zero_padding_;
   std::string key_prefix_;
+  uint64_t last_key;
 };
 
 } // ycsbc

@@ -1,6 +1,11 @@
 #ifndef YCSB_C_DB_SYNC_ASYNC_ADAPTERH_
 #define YCSB_C_DB_SYNC_ASYNC_ADAPTERH_
-
+#ifdef SPLINTER_TEST
+extern "C"{
+#include "splinterdb/splinterdb.h"
+#include "splinterdb/default_data_config.h"
+}
+#endif
 #ifdef USE_ASYNC_TEST
 #include <iostream>
 #include <future>
@@ -32,8 +37,18 @@ class DBSyncAsyncAdapter : public AsyncDBInterface{
   void Cleanup() {
     db_->Cleanup();
   }
+  void RefreshThread() override
+  {
+    const int num_threads = std::stoi(AsyncDBInterface::props_->GetProperty("threadcount", "1"));
+    for (int i = 0; i < num_threads; ++i) {
+      worker_threads_.emplace_back(std::async(std::launch::async, &DBSyncAsyncAdapter::WorkerThread, this));
+    }
+  }
 
   inline void WorkerThread() {
+    #ifdef SPLINTER_TEST
+      platform_register_thread();
+    #endif
     try {
       task t;
       while(true) {
@@ -48,8 +63,11 @@ class DBSyncAsyncAdapter : public AsyncDBInterface{
             break;
           case task::END:
             latch_->CountDown();
-            break;
+            return;
           case task::QUIT:
+            #ifdef SPLINTER_TEST
+              platform_deregister_thread();
+            #endif
             latch_->CountDown();
             return;
         }
@@ -64,9 +82,11 @@ class DBSyncAsyncAdapter : public AsyncDBInterface{
     task_queue_.enqueue(t);
   }
 
+  
+
  private:
   folly::UnboundedQueue<task, false, false, false> task_queue_;
-  std::vector<std::future<void>> worker_threads_;
+  
 };
 
 } // ycsbc

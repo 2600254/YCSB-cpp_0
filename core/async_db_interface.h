@@ -7,7 +7,7 @@
 #include "utils/countdown_latch.h"
 #include "utils/timer.h"
 #include "utils/utils.h"
-
+#include <future>
 namespace ycsbc {
 struct task {
   utils::Timer<uint64_t, std::nano> wait_timer;
@@ -28,7 +28,8 @@ class AsyncDBInterface : public DB{
                                                    measurements_(measurements),
                                                    props_(props),
                                                    wl_(wl),
-                                                   latch_(latch){}
+                                                   latch_(latch)
+                                                   {}
   virtual ~AsyncDBInterface() {
     delete db_;
   }
@@ -36,8 +37,8 @@ class AsyncDBInterface : public DB{
   virtual void Cleanup() = 0;
   virtual void AddTask(const task& t) = 0;
   
-  Status Read(const std::string &table, const std::string &key,
-              const std::vector<std::string> *fields, std::vector<Field> &result) {
+  virtual Status Read(const std::string &table, const std::string &key,
+              const std::vector<std::string> *fields, std::vector<Field> &result) override {
     uint64_t elapsed = wait_timer_.End();
     measurements_->Report(READ_WAIT, elapsed);
     timer_.Start();
@@ -50,8 +51,8 @@ class AsyncDBInterface : public DB{
     }
     return s;
   }
-  Status Scan(const std::string &table, const std::string &key, int record_count,
-              const std::vector<std::string> *fields, std::vector<std::vector<Field>> &result) {
+  virtual Status Scan(const std::string &table, const std::string &key, int record_count,
+              const std::vector<std::string> *fields, std::vector<std::vector<Field>> &result) override {
     uint64_t elapsed = wait_timer_.End();
     measurements_->Report(SCAN_WAIT, elapsed);
     timer_.Start();
@@ -64,7 +65,7 @@ class AsyncDBInterface : public DB{
     }
     return s;
   }
-  Status Update(const std::string &table, const std::string &key, std::vector<Field> &values) {
+  virtual Status Update(const std::string &table, const std::string &key, std::vector<Field> &values) override {
     uint64_t elapsed = wait_timer_.End();
     measurements_->Report(UPDATE_WAIT, elapsed);
     timer_.Start();
@@ -77,7 +78,7 @@ class AsyncDBInterface : public DB{
     }
     return s;
   }
-  Status Insert(const std::string &table, const std::string &key, std::vector<Field> &values) {
+  virtual Status Insert(const std::string &table, const std::string &key, std::vector<Field> &values) override {
     uint64_t elapsed = wait_timer_.End();
     measurements_->Report(INSERT_WAIT, elapsed);
     timer_.Start();
@@ -90,7 +91,7 @@ class AsyncDBInterface : public DB{
     }
     return s;
   }
-  Status Delete(const std::string &table, const std::string &key) {
+  virtual Status Delete(const std::string &table, const std::string &key) override {
     uint64_t elapsed = wait_timer_.End();
     measurements_->Report(DELETE_WAIT, elapsed);
     timer_.Start();
@@ -103,13 +104,24 @@ class AsyncDBInterface : public DB{
     }
     return s;
   }
+  void WaitThread()
+  {
+    for(auto& future_:worker_threads_)
+    {
+      future_.get();
+    }
+  }
+  virtual void RefreshThread()
+  {
 
+  }
  protected:
   DB *db_;
   Measurements *measurements_;
   utils::Properties *props_;
   ycsbc::CoreWorkload *wl_;
   utils::CountDownLatch *latch_;
+  std::vector<std::future<void>> worker_threads_{};
   inline static thread_local utils::Timer<uint64_t, std::nano> wait_timer_;
   inline static thread_local utils::Timer<uint64_t, std::nano> timer_;
 };

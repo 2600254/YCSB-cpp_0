@@ -1,6 +1,7 @@
 #ifndef YCSB_C_DB_NATIVE_ASYNC_ADAPTER_H_
 #define YCSB_C_DB_NATIVE_ASYNC_ADAPTER_H_
 
+
 #ifdef USE_ASYNC_TEST
 #include <iostream>
 #include <future>

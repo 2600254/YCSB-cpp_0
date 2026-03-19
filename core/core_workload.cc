@@ -258,7 +258,7 @@ uint64_t CoreWorkload::NextTransactionKeyNum() {
   uint64_t key_num;
   do {
     key_num = key_chooser_->Next();
-  } while (key_num > transaction_insert_key_sequence_->Last());
+  }while(key_num > transaction_insert_key_sequence_->Last());
   return key_num;
 }
 
@@ -272,7 +272,6 @@ bool CoreWorkload::DoInsert(DB &db) {
   BuildValues(fields);
   return db.Insert(table_name_, key, fields) == DB::kOK;
 }
-
 bool CoreWorkload::DoTransaction(DB &db) {
   DB::Status status;
   switch (op_chooser_.Next()) {
@@ -296,7 +295,6 @@ bool CoreWorkload::DoTransaction(DB &db) {
   }
   return (status == DB::kOK);
 }
-
 DB::Status CoreWorkload::TransactionRead(DB &db) {
   uint64_t key_num = NextTransactionKeyNum();
   const std::string key = BuildKeyName(key_num);
@@ -347,6 +345,7 @@ DB::Status CoreWorkload::TransactionScan(DB &db) {
 }
 
 DB::Status CoreWorkload::TransactionUpdate(DB &db) {
+  
   uint64_t key_num = NextTransactionKeyNum();
   const std::string key = BuildKeyName(key_num);
   std::vector<DB::Field> values;
@@ -356,8 +355,8 @@ DB::Status CoreWorkload::TransactionUpdate(DB &db) {
     BuildSingleValue(values);
   }
   return db.Update(table_name_, key, values);
+  return DB::Status::kOK;
 }
-
 DB::Status CoreWorkload::TransactionInsert(DB &db) {
   uint64_t key_num = transaction_insert_key_sequence_->Next();
   const std::string key = BuildKeyName(key_num);

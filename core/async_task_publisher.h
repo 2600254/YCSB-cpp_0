@@ -3,7 +3,6 @@
 
 #include "async_db_interface.h"
 #include "utils/rate_limit.h"
-
 namespace ycsbc {
 
 inline int AsyncTaskPublisher(AsyncDBInterface *async_db, 
@@ -14,9 +13,12 @@ inline int AsyncTaskPublisher(AsyncDBInterface *async_db,
                               bool cleanup_db,
                               utils::CountDownLatch *latch, 
                               utils::RateLimiter *rlim) {
+  #ifndef SPLINTER_TEST
   if (init_db) {
+    
     async_db->Init();
   }
+  #endif
   task t;
   if (is_loading) {
     t.type = task::LOAD;
@@ -41,9 +43,12 @@ inline int AsyncTaskPublisher(AsyncDBInterface *async_db,
   for (int i = 0; i < num_threads; ++i) {
     async_db->AddTask(t);
   }
+  
   if (cleanup_db) {
     latch->Await();
-    async_db->Cleanup();
+    #ifndef SPLINTER_TEST
+      async_db->Cleanup();
+    #endif
   }
   return ops;
 }

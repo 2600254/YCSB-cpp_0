@@ -16,7 +16,6 @@
 #include <future>
 #include <chrono>
 #include <iomanip>
-
 #include "async_task_publisher.h"
 #include "client.h"
 #include "core_workload.h"
@@ -207,7 +206,9 @@ int main(const int argc, const char *argv[]) {
     if (rate_file != "") {
       rlim_future = std::async(std::launch::async, RateLimitThread, rate_file, rate_limiters, &async_latch);
     }
-    
+    #ifdef SPLINTER_TEST
+      async_db->Init();
+    #endif
     int sum = std::async(std::launch::async, ycsbc::AsyncTaskPublisher, async_db, 
                          total_ops, num_threads, true, true, !do_transaction, &async_latch, rate_limiters[0]).get();
 
@@ -286,12 +287,15 @@ int main(const int argc, const char *argv[]) {
   } else if (do_transaction) {
 #ifdef USE_ASYNC_TEST
     // initial ops per second, unlimited if <= 0
+    if(do_load)
+    {
+      async_db->RefreshThread();
+    }
     const int64_t ops_limit = std::stoi(props.GetProperty("limit.ops", "0"));
     // rate file path for dynamic rate limiting, format "time_stamp_sec new_ops_per_second" per line
     std::string rate_file = props.GetProperty("limit.file", "");
 
     const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
-
     if (do_load) {
       async_latch.~CountDownLatch();
       new (&async_latch) ycsbc::utils::CountDownLatch(num_threads);
@@ -314,10 +318,13 @@ int main(const int argc, const char *argv[]) {
     if (rate_file != "") {
       rlim_future = std::async(std::launch::async, RateLimitThread, rate_file, rate_limiters, &async_latch);
     }
-    
     int sum = std::async(std::launch::async, ycsbc::AsyncTaskPublisher, async_db, 
                          total_ops, num_threads, false, !do_load, true, &async_latch, rate_limiters[0]).get();
     async_latch.Await();
+    #ifdef SPLINTER_TEST
+      async_db->WaitThread();
+      async_db->Cleanup();
+    #endif
     double runtime = timer.End();
 
     if (show_status) {
